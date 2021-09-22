@@ -1,29 +1,26 @@
-// Scapgegoat.h
-#ifndef SCAPEGOAT_H
-#define SCAPEGOAT_H
+// WBTree.h
+#ifndef WBTREE_H
+#define WBTREE_H
 
 #include <iostream>
-#include <cmath>
 using namespace std;
 
 template <typename T>
-class Scapegoat {
+class WBTree {
 public:
-	Scapegoat() {
+	WBTree() {
 		root = NULL;
-		alpha = 0.5625;
-		max_size = 0;
+		alpha = 0.4;
 	}
 
-	Scapegoat(double Alpha) {
-		if ((Alpha <= 0.5) || (1 <= Alpha))
-			throw invalid_argument("Alpha must be 0.5 < Alpha < 1");
+	WBTree(double Alpha) {
+		if ((Alpha <= 0) || (0.5 <= Alpha))
+			throw invalid_argument("Alpha must be 0 < Alpha < 0.5");
 		root = NULL;
 		alpha = Alpha;
-		max_size = 0;
 	}
 
-	~Scapegoat() {
+	~WBTree() {
 		_clear(root);
 	}
 
@@ -32,16 +29,18 @@ public:
 	}
 
 	bool insert(T v) {
-		bool need_rebuild = false;
-		return _insert(root, v, 0, need_rebuild);
+		NODE** rebuildLoc = NULL;
+		bool result = _insert(root, v, rebuildLoc);
+		if (rebuildLoc)
+			_rebuild(*rebuildLoc);
+		return result;
 	}
 
 	bool remove(T v) {
-		bool result = _delete(root, v);
-		if (root && root->size <= max_size / 2) {
-			_rebuild(root);
-			max_size = root->size;
-		}
+		NODE** rebuildLoc = NULL;
+		bool result = _delete(root, v, rebuildLoc);
+		if (rebuildLoc)
+			_rebuild(*rebuildLoc);
 		return result;
 	}
 
@@ -66,8 +65,15 @@ private:
 		}
 	};
 	NODE* root;
-	int max_size;
 	double alpha;
+
+	bool _isUnbalanced(NODE* t) {
+		if (t->left && t->left->size + 1 < alpha * (t->size + 1))
+			return true;
+		else if (t->right && t->right->size + 1 < alpha * (t->size + 1))
+			return true;
+		return false;
+	}
 
 	NODE* _search(NODE* t, T v) {
 		if (t == NULL)
@@ -80,42 +86,23 @@ private:
 			return t;
 	}
 
-	bool _insert(NODE*& t, T v, int depth, bool& need_rebuild) {
-		bool result, is_left;
+	bool _insert(NODE*& t, T v, NODE** rebuildLoc) {
+		bool result;
 		if (t == NULL) {
-			int new_size;
-			if (root)
-				new_size = root->size + 1;
-			else
-				new_size = 1;
 			t = new NODE(v);
-
-			if (max_size < new_size)
-				max_size = new_size;
-			if (depth > int(log(new_size) / log(1 / alpha)) + 1)
-				need_rebuild = true;
 			return true;
 		}
-		else if (v < t->key) {
-			result = _insert(t->left, v, depth + 1, need_rebuild);
-			is_left = true;
-		}
-		else if (v > t->key) {
-			result = _insert(t->right, v, depth + 1, need_rebuild);
-			is_left = false;
-		}
+		else if (v < t->key)
+			result = _insert(t->left, v, rebuildLoc);
+		else if (v > t->key)
+			result = _insert(t->right, v, rebuildLoc);
 		else
 			return false;
 
 		if (result) {
 			t->size++;
-			if (need_rebuild) {
-				if ((t->left && t->left->size > alpha * t->size) || 
-					(t->right && t->right->size > alpha * t->size)) {
-					_rebuild(t);
-					need_rebuild = false;
-				}
-			}
+			if (_isUnbalanced(t))
+				rebuildLoc = &t;
 		}
 		return result;
 	}
@@ -127,18 +114,18 @@ private:
 		return t;
 	}
 
-	bool _delete(NODE*& t, T v) {
+	bool _delete(NODE*& t, T v, NODE** rebuildLoc) {
 		bool result;
 		if (t == NULL)
 			return false;
 		else if (v < t->key)
-			result = _delete(t->left, v);
+			result = _delete(t->left, v, rebuildLoc);
 		else if (v > t->key)
-			result = _delete(t->right, v);
+			result = _delete(t->right, v, rebuildLoc);
 		else { //Node found
 			if (t->left && t->right) {	//Both child nodes exist.
 				t->key = _getRightMost(t->left)->key;	//Find the inorder predecessor of t and copy its key.
-				_delete(t->left, t->key);				//Delete the inorder predecessor. Note that it always has 0 or 1 child nodes.
+				_delete(t->left, t->key, rebuildLoc);				//Delete the inorder predecessor. Note that it always has 0 or 1 child nodes.
 				result = true;
 			}
 			else { //0 or 1 child nodes exist
@@ -153,8 +140,11 @@ private:
 			}
 		}
 
-		if (result)
+		if (result) {
 			t->size--;
+			if (_isUnbalanced(t))
+				rebuildLoc = &t;
+		}
 		return result;
 	}
 
@@ -187,7 +177,7 @@ private:
 			return;
 		int length = t->size;
 		NODE** nodeArr = new NODE * [length]();
-		_getCopy(t, nodeArr, 0);				// Make nodeArr store all nodes in increasing key order
+		_getCopy(t, nodeArr, 0);					// Make nodeArr store all nodes in increasing key order
 		t = _buildTree(nodeArr, 0, length - 1);	// Rebuild the tree using the array
 		delete[] nodeArr;
 	}
