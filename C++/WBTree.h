@@ -68,9 +68,10 @@ private:
 	double alpha;
 
 	bool _isUnbalanced(NODE* t) {
-		if (t->left && t->left->size + 1 < alpha * (t->size + 1))
+		double thres = alpha * t->size;
+		if ((t->left && t->left->size + 1 < thres) || (!t->left && 1 < thres))
 			return true;
-		else if (t->right && t->right->size + 1 < alpha * (t->size + 1))
+		else if ((t->right && t->right->size + 1 < thres) || (!t->right && 1 < thres))
 			return true;
 		return false;
 	}
@@ -86,7 +87,7 @@ private:
 			return t;
 	}
 
-	bool _insert(NODE*& t, T v, NODE** rebuildLoc) {
+	bool _insert(NODE*& t, T v, NODE**& rebuildLoc) {
 		bool result;
 		if (t == NULL) {
 			t = new NODE(v);
@@ -114,7 +115,7 @@ private:
 		return t;
 	}
 
-	bool _delete(NODE*& t, T v, NODE** rebuildLoc) {
+	bool _delete(NODE*& t, T v, NODE**& rebuildLoc) {
 		bool result;
 		if (t == NULL)
 			return false;
@@ -148,7 +149,7 @@ private:
 		return result;
 	}
 
-	/* Auxillary function used in _update for rebuilds */
+	/* Auxillary function used in _rebuild */
 	void _getCopy(NODE* t, NODE** nodeArr, int s) {
 		int index = s;
 		if (t->left != NULL) {
@@ -160,7 +161,7 @@ private:
 			_getCopy(t->right, nodeArr, index + 1);
 	}
 
-	/* Auxillary function used in _update for rebuilds */
+	/* Auxillary function used in _rebuild */
 	NODE* _buildTree(NODE** nodeArr, int s, int f) {
 		if (s > f)
 			return NULL;

@@ -2,6 +2,9 @@
 #ifndef WBTREEP_H
 #define WBTREEP_H
 
+#define WCONCUR_SIZE 30000	// Spawns a thread only when the tree is bigger than this
+#define WCONCUR_DEPTH 8		// Results in max 2^n threads
+
 #include <iostream>
 #include <thread>
 #include <future>
@@ -70,9 +73,10 @@ private:
 	double alpha;
 
 	bool _isUnbalanced(NODE* t) {
-		if (t->left && t->left->size + 1 < alpha * (t->size + 1))
+		double thres = alpha * t->size;
+		if ((t->left && t->left->size + 1 < thres) || (!t->left && 1 < thres))
 			return true;
-		else if (t->right && t->right->size + 1 < alpha * (t->size + 1))
+		else if ((t->right && t->right->size + 1 < thres) || (!t->right && 1 < thres))
 			return true;
 		return false;
 	}
@@ -88,7 +92,7 @@ private:
 			return t;
 	}
 
-	bool _insert(NODE*& t, T v, NODE** rebuildLoc) {
+	bool _insert(NODE*& t, T v, NODE**& rebuildLoc) {
 		bool result;
 		if (t == NULL) {
 			t = new NODE(v);
@@ -116,7 +120,7 @@ private:
 		return t;
 	}
 
-	bool _delete(NODE*& t, T v, NODE** rebuildLoc) {
+	bool _delete(NODE*& t, T v, NODE**& rebuildLoc) {
 		bool result;
 		if (t == NULL)
 			return false;
@@ -150,44 +154,63 @@ private:
 		return result;
 	}
 
-	/* Auxillary function used in _update for rebuilds */
-	void _getCopy(NODE* t, NODE** nodeArr, int s, int depth) {
-		bool need_wait = false;
-		future<void> ft;
-
+	/* Auxillary function used in _rebuild */
+	void _getCopy(NODE* t, NODE** nodeArr, int s) {
 		int index = s;
 		if (t->left != NULL) {
 			index += t->left->size;
-			if (t->left->size > CONCUR_SIZE && depth < CONCUR_DEPTH) {
-				need_wait = true;
-				ft = async(std::launch::async, &WBTreeP<T>::_getCopy, this, t->left, ref(nodeArr), s, depth + 1);
-			}
-			else
-				_getCopy(t->left, nodeArr, s, depth + 1);
+			_getCopy(t->left, nodeArr, s);
 		}
 		nodeArr[index] = t;
 		if (t->right != NULL)
-			_getCopy(t->right, nodeArr, index + 1, depth + 1);
+			_getCopy(t->right, nodeArr, index + 1);
+	}
 
-		if (need_wait)
+	/* Parallelized version of _getCopy */
+	void _getCopyP(NODE* t, NODE** nodeArr, int s, int depth) {
+		if (t->size < WCONCUR_SIZE || depth >= WCONCUR_DEPTH) {
+			_getCopy(t, nodeArr, s);
+			return;
+		}
+
+		int index = s;
+		future<void> ft;
+		if (t->left != NULL) {
+			index += t->left->size;
+			ft = async(std::launch::async, &WBTreeP<T>::_getCopyP, this, t->left, ref(nodeArr), s, depth + 1);
+		}
+		nodeArr[index] = t;
+		if (t->right != NULL)
+			_getCopyP(t->right, nodeArr, index + 1, depth + 1);
+
+		if (index != s)
 			ft.wait();
 	}
 
-	/* Auxillary function used in _update for rebuilds */
-	NODE* _buildTree(NODE** nodeArr, int s, int f, int depth) {
+	/* Auxillary function used in _rebuild */
+	NODE* _buildTree(NODE** nodeArr, int s, int f) {
 		if (s > f)
 			return NULL;
 		int m = (s + f + 1) / 2;
 		NODE* t = nodeArr[m];
-		if (m - s > CONCUR_SIZE && depth < CONCUR_DEPTH) {
-			auto handler = async(std::launch::async, &WBTreeP<T>::_buildTree, this, ref(nodeArr), s, m - 1, depth + 1);
-			t->right = _buildTree(nodeArr, m + 1, f, depth + 1);
-			t->left = handler.get();
-		}
-		else {
-			t->left = _buildTree(nodeArr, s, m - 1, depth + 1);
-			t->right = _buildTree(nodeArr, m + 1, f, depth + 1);
-		}
+		t->left = _buildTree(nodeArr, s, m - 1);
+		t->right = _buildTree(nodeArr, m + 1, f);
+		t->size = f - s + 1;
+		return t;
+	}
+
+	/* Parallelized version of _buildTree */
+	NODE* _buildTreeP(NODE** nodeArr, int s, int f, int depth) {
+		if (s > f)
+			return NULL;
+		if (f - s + 1 < WCONCUR_SIZE || depth >= WCONCUR_DEPTH)
+			return _buildTree(nodeArr, s, f);
+		
+		int m = (s + f + 1) / 2;
+		NODE* t = nodeArr[m];
+		auto handler = async(std::launch::async, &WBTreeP<T>::_buildTreeP, this, ref(nodeArr), s, m - 1, depth + 1);
+		t->right = _buildTreeP(nodeArr, m + 1, f, depth + 1);
+		t->left = handler.get();
 		t->size = f - s + 1;
 		return t;
 	}
@@ -197,8 +220,8 @@ private:
 			return;
 		int length = t->size;
 		NODE** nodeArr = new NODE * [length]();
-		_getCopy(t, nodeArr, 0, 0);					// Make nodeArr store all nodes in increasing key order
-		t = _buildTree(nodeArr, 0, length - 1, 0);	// Rebuild the tree using the array
+		_getCopyP(t, nodeArr, 0, 0);				// Make nodeArr store all nodes in increasing key order
+		t = _buildTreeP(nodeArr, 0, length - 1, 0);	// Rebuild the tree using the array
 		delete[] nodeArr;
 	}
 

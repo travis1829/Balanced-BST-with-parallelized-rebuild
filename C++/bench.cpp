@@ -166,6 +166,6 @@ int benchAllW(int n, bool shuffle) {
 
 int main() {
 	benchRebuildW(N, true);
-	//benchAllW(N, true);
+	benchAllW(N, false);
 	return 0;
 }
