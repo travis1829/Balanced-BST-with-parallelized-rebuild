@@ -3,8 +3,8 @@
 #ifndef SCAPEGOATP_H
 #define SCAPEGOATP_H
 
-#define SCONCUR_SIZE 30000	// Spawns a thread only when the tree is bigger than this
-#define SCONCUR_DEPTH 5 	// Results in max 2^n threads
+#define SCONCUR_SIZE 8500	// Spawns a thread only when subtree size is bigger than this
+#define SCONCUR_DEPTH 3 	// Results in max 2^n threads
 
 #include <iostream>
 #include <cmath>
@@ -221,8 +221,8 @@ private:
 	}
 
 	void _rebuild(NODE*& t) {
-		if (t == NULL)
-			return;
+		// if (t == NULL)
+		// 	return;
 		int length = t->size;
 		NODE** nodeArr = new NODE * [length]();
 		_getCopyP(t, nodeArr, 0, 0);				// Make nodeArr store all nodes in increasing key order

@@ -1,26 +1,31 @@
-// WBTree.h
-#ifndef WBTREE_H
-#define WBTREE_H
+// WBTreeTP.h
+#ifndef WBTREETP_H
+#define WBTREETP_H
+
+#define WT_POOL_SIZE 7		// Results in WT_POOL_SIZE + 1 threads
+#define WTCONCUR_MIN 6000	// Uses thread pool only when subtree size is bigger than this
+#define WTCONCUR_DEPTH 3	// Results in max 2^n tasks for threads
 
 #include <iostream>
+#include "ThreadPool.h" // https://github.com/progschj/ThreadPool
 using namespace std;
 
 template <typename T>
-class WBTree {
+class WBTreeTP {
 public:
-	WBTree() {
+	WBTreeTP(): pool(WT_POOL_SIZE) {
 		root = NULL;
 		alpha = 0.32;
 	}
 
-	WBTree(double Alpha) {
+	WBTreeTP(double Alpha): pool(WT_POOL_SIZE) {
 		if ((Alpha <= 0) || (0.5 <= Alpha))
 			throw invalid_argument("Alpha must be 0 < Alpha < 0.5");
 		root = NULL;
 		alpha = Alpha;
 	}
 
-	~WBTree() {
+	~WBTreeTP() {
 		_clear(root);
 	}
 
@@ -66,6 +71,7 @@ private:
 	};
 	NODE* root;
 	double alpha;
+	ThreadPool pool;
 
 	bool _isUnbalanced(NODE* t) {
 		double thres = alpha * (t->size + 1);
@@ -162,6 +168,27 @@ private:
 	}
 
 	/* Auxillary function used in _update for rebuilds */
+	void _getCopyP(NODE* t, NODE** nodeArr, int s, int depth) {
+		if (depth >= WTCONCUR_DEPTH) {
+			_getCopy(t, nodeArr, s);
+			return;
+		}
+
+		int index = s;
+		future<void> ft;
+		if (t->left != NULL) {
+			index += t->left->size;
+			ft = pool.enqueue(&WBTreeTP<T>::_getCopyP, this, t->left, nodeArr, s, depth + 1);
+		}
+		nodeArr[index] = t;
+		if (t->right != NULL)
+			_getCopyP(t->right, nodeArr, index + 1, depth + 1);
+
+		if (index != s)
+			ft.wait();
+	}
+
+	/* Auxillary function used in _update for rebuilds */
 	NODE* _buildTree(NODE** nodeArr, int s, int f) {
 		if (s > f)
 			return NULL;
@@ -173,13 +200,35 @@ private:
 		return t;
 	}
 
+	/* Auxillary function used in _update for rebuilds */
+	NODE* _buildTreeP(NODE** nodeArr, int s, int f, int depth) {
+		if (s > f)
+			return NULL;
+		if (depth >= WTCONCUR_DEPTH)
+			return _buildTree(nodeArr, s, f);
+
+		int m = (s + f + 1) / 2;
+		NODE* t = nodeArr[m];
+		auto handler = pool.enqueue(&WBTreeTP<T>::_buildTreeP, this, nodeArr, s, m - 1, depth + 1);
+		t->right = _buildTreeP(nodeArr, m + 1, f, depth + 1);
+		t->left = handler.get();
+		t->size = f - s + 1;
+		return t;
+	}
+
 	void _rebuild(NODE*& t) {
 		// if (t == NULL)
 		// 	return;
 		int length = t->size;
 		NODE** nodeArr = new NODE * [length]();
-		_getCopy(t, nodeArr, 0);				// Make nodeArr store all nodes in increasing key order
-		t = _buildTree(nodeArr, 0, length - 1);	// Rebuild the tree using the array
+		if (length > WTCONCUR_MIN) {
+			_getCopyP(t, nodeArr, 0, 0);				// Make nodeArr store all nodes in increasing key order
+			t = _buildTreeP(nodeArr, 0, length - 1, 0);	// Rebuild the tree using the array
+		}
+		else {
+			_getCopy(t, nodeArr, 0);
+			t = _buildTree(nodeArr, 0, length - 1);
+		}
 		delete[] nodeArr;
 	}
 

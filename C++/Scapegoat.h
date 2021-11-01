@@ -158,7 +158,7 @@ private:
 		return result;
 	}
 
-	/* Auxillary function used in _rebuild */
+	/* Auxillary function used in _update for rebuilds */
 	void _getCopy(NODE* t, NODE** nodeArr, int s) {
 		int index = s;
 		if (t->left != NULL) {
@@ -170,7 +170,7 @@ private:
 			_getCopy(t->right, nodeArr, index + 1);
 	}
 
-	/* Auxillary function used in _rebuild */
+	/* Auxillary function used in _update for rebuilds */
 	NODE* _buildTree(NODE** nodeArr, int s, int f) {
 		if (s > f)
 			return NULL;
@@ -183,8 +183,8 @@ private:
 	}
 
 	void _rebuild(NODE*& t) {
-		if (t == NULL)
-			return;
+		// if (t == NULL)
+		// 	return;
 		int length = t->size;
 		NODE** nodeArr = new NODE * [length]();
 		_getCopy(t, nodeArr, 0);				// Make nodeArr store all nodes in increasing key order
